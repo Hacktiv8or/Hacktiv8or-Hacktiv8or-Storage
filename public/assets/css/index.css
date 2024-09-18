@@ -149,6 +149,11 @@ footer {
     }
 }
 
+div#intro {
+    position: absolute;
+    background: lime;
+    border-radius: 10px;
+}
 div#file_updown {
     position: absolute;
     top: 50%; left: 50%;
