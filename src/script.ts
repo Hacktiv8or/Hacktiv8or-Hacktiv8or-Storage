@@ -252,7 +252,7 @@ async function loadFolderContents(folderPath: string) {
     const pathElem = document.getElementById("path")
     pathElem.innerText = (folderPath != "") ? `/ ${folderPath.replace(/\//g, " / ")}` : ""
     pathElem.dataset.path = folderPath
-    const url = `https://api.github.com/repos/Hacktiv8or/Storage/contents/${folderPath}`;
+    const url = `https://api.github.com/repos/Hacktiv8or/Storage/contents/uploads/${folderPath}`;
     let headers = { "Authorization": `token ${githubToken}`, "Accept": "application/json" }
     if (etagCache[url]) headers["If-None-Match"] = etagCache[url]
     const response = await fetch(url, { method: "GET", headers: headers });
