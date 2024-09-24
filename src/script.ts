@@ -27,7 +27,7 @@ async function uploadFileToRepo(file: { name: string } | File, content: string, 
 
     return new Promise<void>((resolve, reject) => {
         let xhr = new XMLHttpRequest();
-        xhr.open("PUT", `https://api.github.com/repos/Hacktiv8or/Storage/contents/uploads/${(folderPath != "") ? folderPath + "/" : ""}${file.name}`, true);
+        xhr.open("PUT", `https://api.github.com/repos/Hacktiv8or/storage/contents/uploads/${(folderPath != "") ? folderPath + "/" : ""}${file.name}`, true);
         xhr.setRequestHeader("Authorization", `token ${githubToken}`);
         xhr.setRequestHeader("Accept", "application/json");
 
@@ -129,21 +129,40 @@ async function downloadFileFromRepo(fileName: string, url: string) {
     xhr.send()
 }
 
-async function popupPreview(item: DataItem) {
+async function popupPreview(items: DataItem[], itemIndex: number) {
+    const item = items[itemIndex];
+    document.getElementById("image_preview").style.display = "none";
     fetch(item.url, {
         method: "GET",
         headers: { Authorization: `token ${githubToken}`, Accept: "application/vnd.github.raw+json" }
     }).then(async response => {
+        var previewTouchStartX: number;
+        var previewTouchEndX: number;
         const byteArray = new Uint8Array(await response.arrayBuffer());
         const binaryString = byteArray.reduce((data, byte) => data + String.fromCharCode(byte), '');
         const data = btoa(binaryString);
+        document.getElementById("preview_popup").replaceChild(document.getElementById("preview_container").cloneNode(true), document.getElementById("preview_container"));
         (document.getElementById("image_preview") as HTMLImageElement).src = `data:image/${item.name.split(".").pop()};base64,${data}`
-        document.getElementById("preview_loading_icon").style.display = "none"
-        document.getElementById("preview_loading_icon").style.animation = "none"
+        document.getElementById("loading_icon").style.display = "none"
         document.getElementById("image_preview").style.display = "initial";
+        document.getElementById("preview_container").addEventListener("touchstart", event => {
+            previewTouchStartX = event.changedTouches[0].clientX;
+        }, { passive: true })
+        document.getElementById("preview_container").addEventListener("touchend", event => {
+            previewTouchEndX = event.changedTouches[0].clientX;
+            if (Math.abs(previewTouchEndX - previewTouchStartX) > 100) {
+                const swipe = previewTouchEndX - previewTouchStartX;
+                if (swipe > 0) {
+                    if (itemIndex-1 >= 0)
+                        popupPreview(items, --itemIndex);
+                } else if (swipe < 0) {
+                    if (itemIndex+1 < items.length)
+                        popupPreview(items, ++itemIndex);
+                }
+            }
+        }, { passive: true })
     });
-    document.getElementById("preview_loading_icon").style.display = "initial"
-    document.getElementById("preview_loading_icon").style.animation = "loadingRotation 2s linear infinite forwards"
+    document.getElementById("loading_icon").style.display = "flex"
     document.getElementById("preview_name").innerText = item.name;
     document.getElementById("preview_popup").style.visibility = "initial";
 }
@@ -158,6 +177,7 @@ async function displayFolderContents(data: DataItem[], home: boolean) {
         return a.name.localeCompare(b.name);
     });
     const hacktiv8orData: Hacktiv8orData = await fetchHacktiv8orConfig(data)
+    const previewItems: DataItem[] = data.filter(file => utils.isOpenable(file.name) && utils.getPreviewType(file.name))
     container.innerHTML = document.getElementById("main-template").innerHTML
     if (home) {
         (document.getElementsByClassName("item-new-folder")[0] as HTMLElement).style.display = "none";
@@ -175,7 +195,11 @@ async function displayFolderContents(data: DataItem[], home: boolean) {
                 btoa("{}")
             )
     })
-    if (data.length == 1 && !adminMode) { document.getElementById("empty_folder").style.display = "flex"; return; }
+    if (data.length == 1 && !adminMode) {
+        document.getElementById("loading_icon").style.display = "none";
+        document.getElementById("empty_folder").style.display = "flex";
+        return;
+    }
     else { document.getElementById("empty_folder").style.display = "none" }
     for (const item of data) {
         const element = document.createElement("div");
@@ -207,7 +231,9 @@ async function displayFolderContents(data: DataItem[], home: boolean) {
         if (item.type == "file") {
             sizeElem.innerText = utils.formatSize(item.size);
             element.addEventListener("click", () => {
-                if (utils.isOpenable(item.name)) popupPreview(item)
+                if (utils.isOpenable(item.name)) {
+                    popupPreview(previewItems, previewItems.indexOf(item));
+                }
                 else downloadFileFromRepo(item.name, item.url)
             })
         } else if (item.type == "dir")
@@ -237,22 +263,25 @@ async function displayFolderContents(data: DataItem[], home: boolean) {
                 contextMenu.style.display = "initial";
                 if (event.clientY < window.innerHeight - parseInt(window.getComputedStyle(contextMenu).height.replace(/px/g, '')) - 20) { contextMenu.style.top = `${event.clientY}px`; }
                 else { contextMenu.style.bottom = `${window.innerHeight - event.clientY}px`; }
-                if (event.clientX < window.innerWidth - 150) { contextMenu.style.left = `${event.clientX}px`; }
-                else { contextMenu.style.right = `${window.innerWidth - event.clientX - 20}px`; }
+                if (event.clientX < window.innerWidth - 160) { contextMenu.style.left = `${event.clientX}px`; }
+                else { contextMenu.style.right = `${window.innerWidth - event.clientX}px`; }
             })
         }
         element.appendChild(iconElem);
         element.appendChild(nameElem);
         element.appendChild(sizeElem);
         container.appendChild(element);
+        document.getElementById("loading_icon").style.display = "none"
     }
 }
 
 async function loadFolderContents(folderPath: string) {
+    document.getElementById("main").innerHTML = document.getElementById("main-template").innerHTML
+    document.getElementById("loading_icon").style.display = "flex";
     const pathElem = document.getElementById("path")
-    pathElem.innerText = (folderPath != "") ? `/ ${folderPath.replace(/\//g, " / ").replace("uploads /", '')}` : ""
+    pathElem.innerText = (folderPath != "") ? `/ ${folderPath.replace(/\//g, " / ").replace("uploads /", "")}` : ""
     pathElem.dataset.path = folderPath.replace("uploads/","")
-    const url = `https://api.github.com/repos/Hacktiv8or/Storage/contents/uploads/${folderPath.replace("uploads/","")}`;
+    const url = `https://api.github.com/repos/Hacktiv8or/storage/contents/uploads/${folderPath.replace("uploads/","")}`;
     let headers = { "Authorization": `token ${githubToken}`, "Accept": "application/json" }
     if (etagCache[url]) headers["If-None-Match"] = etagCache[url]
     const response = await fetch(url, { method: "GET", headers: headers });
@@ -273,8 +302,7 @@ async function addContextListeners() {
         const contextMenu = document.getElementById("item-context-menu");
         const hacktiv8orFile = currentContent.filter(file => file.name == ".hacktiv8or")[0]
         const hacktiv8orData: Hacktiv8orData = await fetchHacktiv8orConfig(currentContent)
-        const itemName = contextMenu.dataset.elementId
-        console.log(itemName);
+        const itemName = contextMenu.dataset.elementId;
         if (hacktiv8orData.hidden) hacktiv8orData.hidden.push(itemName)
         else hacktiv8orData.hidden = [itemName]
         fetch(hacktiv8orFile.url, {
@@ -292,8 +320,7 @@ async function addContextListeners() {
         const contextMenu = document.getElementById("item-context-menu");
         const hacktiv8orFile = currentContent.filter(file => file.name == ".hacktiv8or")[0]
         const hacktiv8orData: Hacktiv8orData = await fetchHacktiv8orConfig(currentContent)
-        const itemName = contextMenu.dataset.elementId
-        console.log(itemName);
+        const itemName = contextMenu.dataset.elementId;
         hacktiv8orData.hidden.splice(hacktiv8orData.hidden.indexOf(itemName), 1)
         fetch(hacktiv8orFile.url, {
             method: "PUT",
@@ -334,7 +361,6 @@ async function addListeners() {
     document.getElementById("search_bar").addEventListener("keyup", event => {
         const searchInput = (document.getElementById("search_bar") as HTMLInputElement).value;
         const items = document.getElementsByClassName("item") as unknown as Array<HTMLElement>;
-        console.log(event.key)
         if (event.key == "Escape") {
             (document.getElementById("search_bar") as HTMLInputElement).value = "";
             document.getElementById("search_bar").blur();
@@ -397,6 +423,10 @@ async function addListeners() {
         document.getElementById("preview_name").innerText = "";
         (document.getElementById("image_preview") as HTMLImageElement).src = ""
         document.getElementById("image_preview").style.display = "none"
+        document.getElementById("preview_container").replaceChild(
+            document.getElementById("image_preview").cloneNode(),
+            document.getElementById("image_preview")
+        );
     })
 
     document.body.addEventListener("click", event => {
@@ -405,12 +435,23 @@ async function addListeners() {
         document.getElementById("item-context-menu").style.display = "none";
         document.getElementById("item-context-menu").dataset.path = "";
         if (event.clientX > window.innerWidth - 30 && event.clientY > window.innerHeight - 30) { adminMode = adminMode ? false : true; loadFolderContents(document.getElementById("path").dataset.path) }
+        if (event.clientX < 30 && event.clientY > window.innerHeight - 30) {
+            const themeElement = document.getElementById("theme") as HTMLLinkElement;
+            themeElement.href = (themeElement.href.includes("default.css")) ? "assets/css/themes/oceano.css" : "assets/css/themes/default.css"
+        }
     });
 
     document.body.addEventListener("contextmenu", event => {
         event.preventDefault();
-        if (event.target == document.body || (event.target as HTMLElement).id == "main")
-            document.getElementById("screen-context-menu").style.display = "initial"
+        if (event.target == document.body || (event.target as HTMLElement).id == "main") {
+            const contextMenu = document.getElementById("screen-context-menu");
+            contextMenu.removeAttribute("style")
+            if (event.clientY < window.innerHeight - 70 - 20) { contextMenu.style.top = `${event.clientY}px`; }
+            else { contextMenu.style.bottom = `${window.innerHeight - event.clientY}px`; }
+            if (event.clientX < window.innerWidth - 160) { contextMenu.style.left = `${event.clientX}px`; }
+            else { contextMenu.style.right = `${window.innerWidth - event.clientX}px`; }
+            contextMenu.style.display = "initial"
+        }
     });
 
     document.body.addEventListener("keydown", event => {
@@ -454,11 +495,16 @@ async function addListeners() {
             document.getElementById("keyboard-shortcuts")!.style.display = "initial";
         }
 
+        if (event.key.toUpperCase() === "H" && event.ctrlKey) {
+            event.preventDefault();
+            loadFolderContents("")
+        }
+
     });
 
     document.body.addEventListener("keypress", event => {
 
-        if (event.key == "\u03a9") { // Alt + 1257
+        if (event.key == "\u03a9") {
             adminMode = adminMode ? false : true;
             loadFolderContents(document.getElementById("path").dataset.path)
         }
@@ -469,11 +515,6 @@ async function addListeners() {
 }
 
 async function main() {
-    let style_elem = document.createElement("style")
-    style_elem.id = "login_style"
-    style_elem.innerHTML = "header > button, header > input { display: none !important; } header > h1 { display: initial !important; } div#main { display: none !important; }"
-    document.head.appendChild(style_elem)
-    document.getElementById("login_page").style.display = "initial";
     let failed_password_tries = 0;
     document.getElementById("password_input").addEventListener("keydown", async event => {
         if (event.key == "Enter") {
@@ -482,9 +523,9 @@ async function main() {
                 fetch("assets/resources/icons.json", { method: "GET" }).then((resp) => { resp.json().then(utils.setup) })
                 addListeners()
                 githubToken = await extractToken();
-                document.getElementById("login_page").style.display = "none";
                 (document.getElementById("password_input") as HTMLInputElement).value = "";
-                document.head.removeChild(style_elem)
+                document.body.removeChild(document.getElementById("login_page"));
+                document.head.removeChild(document.getElementById("login_style"))
                 loadFolderContents("");
             } else {
                 if (failed_password_tries >= 3) {
